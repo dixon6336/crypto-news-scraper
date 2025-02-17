@@ -55,108 +55,146 @@ class NewsScraperApp {
                 return;
             }
 
-            this.updateStatus('正在准备抓取...', 10);
+            // 重置状态
+            this.statusContainer.style.display = 'block';
+            this.progressBar.style.width = '0%';
+            this.progressBar.classList.remove('bg-danger');
+            this.downloadButton.disabled = true;
+            this.newsTable.innerHTML = '';
+            this.newsData = [];
 
-            // 使用 cors-anywhere 或类似服务来解决跨域问题
-            const proxyUrl = `https://cors-anywhere.herokuapp.com/${url}`;
-            const response = await fetch(proxyUrl);
-            const html = await response.text();
-
-            this.updateStatus('正在解析数据...', 50);
-
-            // 创建 DOM 解析器
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-
-            // 获取新闻数据
-            const newsSection = doc.querySelector('div[data-module-name="Coin-News"]');
-            if (!newsSection) {
-                throw new Error('未找到新闻区域，请确保页面已切换到 News 标签');
+            // 标准化 URL 格式
+            if (!url.includes('/news')) {
+                url = url.replace(/\/?$/, '') + '/news/';
             }
 
-            // 获取所有新闻项
-            const newsItems = Array.from(newsSection.querySelectorAll('article')).map(item => {
-                try {
-                    // 获取标题元素
-                    const titleElement = item.querySelector('h4');
-                    if (!titleElement) return null;
+            this.updateStatus('正在准备抓取...', 10);
+            console.log('处理后的 URL:', url);
 
-                    // 获取描述（包括完整的描述文本）
-                    const descriptionElement = item.querySelector('div[class*="description"]');
-                    
-                    // 获取来源和时间
-                    const sourceElement = item.querySelector('span[data-role="source"]');
-                    const timeElement = item.querySelector('time');
-                    
-                    // 获取时间文本
-                    const timeText = timeElement ? timeElement.textContent.trim() : '';
-                    // 获取来源文本
-                    const sourceText = sourceElement ? sourceElement.textContent.trim() : '';
-                    // 获取标题文本
-                    const titleText = titleElement.textContent.trim();
-                    // 获取完整的描述文本
-                    const descriptionText = descriptionElement ? descriptionElement.textContent.trim() : '';
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+            
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
-                    // 验证数据完整性
-                    if (!titleText || !sourceText) {
-                        console.log('跳过无效新闻项:', { titleText, sourceText });
+            try {
+                const response = await fetch(proxyUrl, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '抓取失败');
+                }
+
+                const data = await response.json();
+                
+                if (!data.html) {
+                    throw new Error('返回数据格式错误');
+                }
+
+                this.updateStatus('正在解析数据...', 50);
+
+                // 创建 DOM 解析器
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(data.html, 'text/html');
+
+                // 获取新闻数据
+                const newsSection = doc.querySelector('div[data-module-name="Coin-News"]');
+                if (!newsSection) {
+                    throw new Error('未找到新闻区域，请确保页面已切换到 News 标签');
+                }
+
+                // 获取所有新闻项
+                const newsItems = Array.from(newsSection.querySelectorAll('article')).map(item => {
+                    try {
+                        // 获取标题元素
+                        const titleElement = item.querySelector('h4');
+                        if (!titleElement) return null;
+
+                        // 获取描述（包括完整的描述文本）
+                        const descriptionElement = item.querySelector('div[class*="description"]');
+                        
+                        // 获取来源和时间
+                        const sourceElement = item.querySelector('span[data-role="source"]');
+                        const timeElement = item.querySelector('time');
+                        
+                        // 获取时间文本
+                        const timeText = timeElement ? timeElement.textContent.trim() : '';
+                        // 获取来源文本
+                        const sourceText = sourceElement ? sourceElement.textContent.trim() : '';
+                        // 获取标题文本
+                        const titleText = titleElement.textContent.trim();
+                        // 获取完整的描述文本
+                        const descriptionText = descriptionElement ? descriptionElement.textContent.trim() : '';
+
+                        // 验证数据完整性
+                        if (!titleText || !sourceText) {
+                            console.log('跳过无效新闻项:', { titleText, sourceText });
+                            return null;
+                        }
+
+                        // 构建新闻项对象
+                        const newsItem = {
+                            title: titleText,
+                            description: descriptionText,
+                            source: sourceText,
+                            time: timeText,
+                            // 添加原始时间文本，以便后续处理
+                            rawTime: timeElement ? timeElement.getAttribute('datetime') || timeText : timeText
+                        };
+
+                        // 记录日志以便调试
+                        console.log('解析到新闻:', newsItem);
+
+                        return newsItem;
+                    } catch (e) {
+                        console.error('处理新闻项时出错:', e);
                         return null;
                     }
+                }).filter(item => {
+                    if (!item) return false;
+                    
+                    // 额外的数据验证
+                    const isValid = item.title && item.source && 
+                                  item.title.length > 0 && 
+                                  item.source.length > 0;
+                    
+                    if (!isValid) {
+                        console.log('过滤掉无效新闻项:', item);
+                    }
+                    return isValid;
+                });
 
-                    // 构建新闻项对象
-                    const newsItem = {
-                        title: titleText,
-                        description: descriptionText,
-                        source: sourceText,
-                        time: timeText,
-                        // 添加原始时间文本，以便后续处理
-                        rawTime: timeElement ? timeElement.getAttribute('datetime') || timeText : timeText
-                    };
+                // 记录找到的新闻数量
+                console.log(`共找到 ${newsItems.length} 条有效新闻`);
 
-                    // 记录日志以便调试
-                    console.log('解析到新闻:', newsItem);
+                this.newsData = newsItems
+                    .map(item => ({
+                        coin: this.getCoinNameFromUrl(url),
+                        title: item.title,
+                        source: item.source,
+                        date: this.convertRelativeTime(item.time)
+                    }))
+                    .filter(this.filterByDate.bind(this));
 
-                    return newsItem;
-                } catch (e) {
-                    console.error('处理新闻项时出错:', e);
-                    return null;
+                if (this.newsData.length === 0) {
+                    this.updateStatus('在选定的日期范围内没有找到新闻', 100);
+                    return;
                 }
-            }).filter(item => {
-                if (!item) return false;
+
+                this.updateStatus('正在显示结果...', 90);
+                this.displayNews();
+                this.downloadButton.disabled = false;
                 
-                // 额外的数据验证
-                const isValid = item.title && item.source && 
-                              item.title.length > 0 && 
-                              item.source.length > 0;
-                
-                if (!isValid) {
-                    console.log('过滤掉无效新闻项:', item);
+                this.updateStatus(`成功抓取 ${this.newsData.length} 条新闻`, 100);
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    throw new Error('请求超时，请重试');
                 }
-                return isValid;
-            });
-
-            // 记录找到的新闻数量
-            console.log(`共找到 ${newsItems.length} 条有效新闻`);
-
-            this.newsData = newsItems
-                .map(item => ({
-                    coin: this.getCoinNameFromUrl(url),
-                    title: item.title,
-                    source: item.source,
-                    date: this.convertRelativeTime(item.time)
-                }))
-                .filter(this.filterByDate.bind(this));
-
-            if (this.newsData.length === 0) {
-                this.updateStatus('在选定的日期范围内没有找到新闻', 100);
-                return;
+                throw error;
             }
 
-            this.updateStatus('正在显示结果...', 90);
-            this.displayNews();
-            this.downloadButton.disabled = false;
-            
-            this.updateStatus(`成功抓取 ${this.newsData.length} 条新闻`, 100);
         } catch (error) {
             console.error('抓取失败:', error);
             this.updateStatus(`抓取失败: ${error.message}`, 100);
