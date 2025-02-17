@@ -100,67 +100,78 @@ class NewsScraperApp {
                 const doc = parser.parseFromString(data.html, 'text/html');
 
                 // 获取新闻数据
-                const newsSection = doc.querySelector('div[data-module-name="Coin-News"]');
+                let newsSection = doc.querySelector('div[data-module-name="Coin-News"]');
                 if (!newsSection) {
-                    // 尝试其他可能的选择器
-                    const alternativeSelectors = [
-                        'div[class*="news"]',
-                        'div[class*="article"]',
-                        'main',
-                        'div[class*="content"]'
+                    // 尝试 CoinMarketCap 特定的选择器
+                    const cmc_selectors = [
+                        'div[class*="sc-aef7b723-0"]',  // 新闻容器
+                        'div[class*="news-list"]',
+                        'div[class*="latest-news"]',
+                        'div[class*="cmc-news"]'
                     ];
                     
-                    for (const selector of alternativeSelectors) {
+                    for (const selector of cmc_selectors) {
                         const element = doc.querySelector(selector);
                         if (element) {
-                            console.log('使用备选选择器找到新闻区域:', selector);
+                            console.log('找到新闻区域:', selector);
                             newsSection = element;
                             break;
                         }
                     }
                     
                     if (!newsSection) {
-                        throw new Error('未找到新闻区域，请检查页面结构');
+                        throw new Error('未找到新闻区域，请确保在新闻页面');
                     }
                 }
 
                 // 获取所有新闻项
-                const newsItems = Array.from(newsSection.querySelectorAll('article, div[class*="news-item"], div[class*="article"]')).map(item => {
+                const newsItems = Array.from(newsSection.querySelectorAll([
+                    'div[class*="news-item"]',
+                    'div[class*="cmc-article"]',
+                    'div[class*="sc-aef7b723-0"]',
+                    'article'
+                ].join(','))).map(item => {
                     try {
-                        // 获取标题元素 - 使用多个可能的选择器
-                        const titleElement = item.querySelector('h4, h3, h2, [class*="title"]');
+                        // 获取标题
+                        const titleElement = item.querySelector([
+                            'h3[class*="sc-"]',
+                            'div[class*="title"]',
+                            'a[class*="cmc-link"]'
+                        ].join(','));
+
                         if (!titleElement) {
                             console.log('跳过：未找到标题元素');
                             return null;
                         }
 
-                        // 获取描述
-                        const descriptionElement = item.querySelector('div[class*="description"], p, [class*="content"]');
-                        
-                        // 获取来源和时间
-                        const sourceElement = item.querySelector('span[data-role="source"], [class*="source"], a[class*="source"]');
-                        const timeElement = item.querySelector('time, [class*="time"], [datetime]');
-                        
-                        // 获取时间文本
-                        const timeText = timeElement ? (timeElement.getAttribute('datetime') || timeElement.textContent.trim()) : '';
-                        // 获取来源文本
-                        const sourceText = sourceElement ? sourceElement.textContent.trim() : '未知来源';
-                        // 获取标题文本
-                        const titleText = titleElement.textContent.trim();
-                        // 获取完整的描述文本
-                        const descriptionText = descriptionElement ? descriptionElement.textContent.trim() : '';
+                        // 获取时间
+                        const timeElement = item.querySelector([
+                            'span[class*="sc-"] time',
+                            'div[class*="time"]',
+                            'span[class*="date"]',
+                            'time',
+                            '[datetime]'
+                        ].join(','));
 
-                        // 记录调试信息
-                        console.log('解析新闻项:', {
+                        // 获取来源
+                        const sourceElement = item.querySelector([
+                            'span[class*="source"]',
+                            'a[class*="source"]',
+                            'div[class*="publisher"]'
+                        ].join(','));
+
+                        const titleText = titleElement.textContent.trim();
+                        const timeText = timeElement ? timeElement.getAttribute('datetime') || timeElement.textContent.trim() : '';
+                        const sourceText = sourceElement ? sourceElement.textContent.trim() : 'CoinMarketCap';
+
+                        console.log('解析新闻:', {
                             title: titleText,
-                            source: sourceText,
                             time: timeText,
-                            description: descriptionText.substring(0, 100) + '...'
+                            source: sourceText
                         });
 
                         return {
                             title: titleText,
-                            description: descriptionText,
                             source: sourceText,
                             time: timeText,
                             rawTime: timeText
@@ -220,8 +231,18 @@ class NewsScraperApp {
     }
 
     getCoinNameFromUrl(url) {
-        const match = url.match(/currencies\/([^/#]+)/);
-        return match ? match[1].toUpperCase() : 'UNKNOWN';
+        try {
+            const urlObj = new URL(url);
+            const pathParts = urlObj.pathname.split('/');
+            const currencyIndex = pathParts.indexOf('currencies');
+            if (currencyIndex !== -1 && pathParts[currencyIndex + 1]) {
+                return pathParts[currencyIndex + 1].toUpperCase();
+            }
+            return '未知币种';
+        } catch (e) {
+            console.error('解析币种名称失败:', e);
+            return '未知币种';
+        }
     }
 
     /**
@@ -230,15 +251,20 @@ class NewsScraperApp {
      * @returns {boolean}
      */
     filterByDate(item) {
-        const startDate = new Date(this.startDate.value);
-        startDate.setHours(0, 0, 0, 0);
-        
-        const endDate = new Date(this.endDate.value);
-        endDate.setHours(23, 59, 59, 999);
-        
-        const itemDate = new Date(item.date);
-        
-        return itemDate >= startDate && itemDate <= endDate;
+        try {
+            const newsDate = new Date(item.date);
+            const startDate = new Date(this.startDate.value);
+            const endDate = new Date(this.endDate.value);
+            
+            // 设置时间为当天的开始和结束
+            startDate.setHours(0, 0, 0, 0);
+            endDate.setHours(23, 59, 59, 999);
+            
+            return newsDate >= startDate && newsDate <= endDate;
+        } catch (e) {
+            console.error('日期过滤错误:', e);
+            return false;
+        }
     }
 
     /**
