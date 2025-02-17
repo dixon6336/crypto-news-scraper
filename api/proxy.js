@@ -70,8 +70,30 @@ export default async function handler(req, res) {
 
                 // 使用更宽松的内容检查
                 if (!html.includes('<html') || !html.includes('</html>')) {
-                    throw new Error('返回的不是有效的 HTML 内容');
+                    console.log('HTML 内容检查失败，尝试解析返回内容...');
+                    // 检查是否包含任何新闻相关内容
+                    const hasNewsContent = [
+                        'news',
+                        'article',
+                        'content',
+                        'title',
+                        'time',
+                        'date',
+                        'source'
+                    ].some(keyword => html.toLowerCase().includes(keyword));
+
+                    if (!hasNewsContent) {
+                        throw new Error('返回内容中没有找到新闻相关信息');
+                    }
                 }
+
+                // 添加调试信息
+                console.log('页面包含的关键字:', {
+                    news: html.includes('news'),
+                    article: html.includes('article'),
+                    content: html.includes('content'),
+                    coinNews: html.includes('Coin-News')
+                });
 
                 res.status(200).json({ html });
                 return;
