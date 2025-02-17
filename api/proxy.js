@@ -36,21 +36,26 @@ export default async function handler(req, res) {
                     method: 'GET',
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                         'Accept-Language': 'en-US,en;q=0.9',
                         'Cache-Control': 'no-cache',
                         'Pragma': 'no-cache',
-                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Ch-Ua': '"Not_A Brand";v="99", "Google Chrome";v="120"',
+                        'Sec-Ch-Ua-Mobile': '?0',
+                        'Sec-Ch-Ua-Platform': '"Windows"',
                         'Sec-Fetch-Dest': 'document',
                         'Sec-Fetch-Mode': 'navigate',
-                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-Site': 'cross-site',
                         'Sec-Fetch-User': '?1',
-                        'Connection': 'keep-alive'
+                        'Upgrade-Insecure-Requests': '1',
+                        'Referer': 'https://coinmarketcap.com/',
+                        'Origin': 'https://coinmarketcap.com',
+                        'Cookie': ''
                     },
-                    redirect: 'follow',
                     credentials: 'omit',
                     mode: 'cors',
-                    timeout: 10000 // 10秒超时
+                    timeout: 15000,
+                    redirect: 'follow'
                 });
 
                 console.log('响应状态:', response.status, response.statusText);
