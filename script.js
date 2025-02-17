@@ -125,55 +125,35 @@ class NewsScraperApp {
                 }
 
                 // 获取所有新闻项
-                const newsItems = Array.from(newsSection.querySelectorAll([
-                    'div[class*="news-item"]',
-                    'div[class*="cmc-article"]',
-                    'div[class*="sc-aef7b723-0"]',
-                    'article'
-                ].join(','))).map(item => {
+                const newsItems = Array.from(doc.querySelectorAll('article')).map(item => {
                     try {
-                        // 获取标题
-                        const titleElement = item.querySelector([
-                            'h3[class*="sc-"]',
-                            'div[class*="title"]',
-                            'a[class*="cmc-link"]'
-                        ].join(','));
+                        const titleElement = item.querySelector('h3');
+                        const timeElement = item.querySelector('time');
+                        const sourceElement = item.querySelector('.source');
+                        const descriptionElement = item.querySelector('.description');
 
                         if (!titleElement) {
                             console.log('跳过：未找到标题元素');
                             return null;
                         }
 
-                        // 获取时间
-                        const timeElement = item.querySelector([
-                            'span[class*="sc-"] time',
-                            'div[class*="time"]',
-                            'span[class*="date"]',
-                            'time',
-                            '[datetime]'
-                        ].join(','));
-
-                        // 获取来源
-                        const sourceElement = item.querySelector([
-                            'span[class*="source"]',
-                            'a[class*="source"]',
-                            'div[class*="publisher"]'
-                        ].join(','));
-
                         const titleText = titleElement.textContent.trim();
-                        const timeText = timeElement ? timeElement.getAttribute('datetime') || timeElement.textContent.trim() : '';
-                        const sourceText = sourceElement ? sourceElement.textContent.trim() : 'CoinMarketCap';
+                        const timeText = timeElement?.getAttribute('datetime') || timeElement?.textContent.trim() || '';
+                        const sourceText = sourceElement?.textContent.trim() || 'CoinMarketCap';
+                        const descriptionText = descriptionElement?.textContent.trim() || '';
 
                         console.log('解析新闻:', {
                             title: titleText,
                             time: timeText,
-                            source: sourceText
+                            source: sourceText,
+                            description: descriptionText.substring(0, 100) + '...'
                         });
 
                         return {
                             title: titleText,
                             source: sourceText,
                             time: timeText,
+                            description: descriptionText,
                             rawTime: timeText
                         };
                     } catch (e) {
@@ -308,57 +288,20 @@ class NewsScraperApp {
     convertRelativeTime(timeText) {
         if (!timeText) return new Date().toISOString();
         
-        const now = new Date();
-        
-        // 处理标准的 ISO 时间格式
+        // 处理 ISO 时间格式
         if (timeText.match(/^\d{4}-\d{2}-\d{2}/)) {
-            return new Date(timeText).toISOString();
+            const date = new Date(timeText);
+            return date.toISOString();
         }
         
-        // 处理相对时间
-        const patterns = [
-            // 英文格式
-            {
-                regex: /(\d+)\s*(minute|hour|day|week|month|year)s?\s+ago/i,
-                process: (amount, unit) => {
-                    switch (unit.toLowerCase()) {
-                        case 'minute': return now.setMinutes(now.getMinutes() - amount);
-                        case 'hour': return now.setHours(now.getHours() - amount);
-                        case 'day': return now.setDate(now.getDate() - amount);
-                        case 'week': return now.setDate(now.getDate() - (amount * 7));
-                        case 'month': return now.setMonth(now.getMonth() - amount);
-                        case 'year': return now.setFullYear(now.getFullYear() - amount);
-                    }
-                }
-            },
-            // 中文格式
-            {
-                regex: /(\d+)\s*(分钟|小时|天|周|月|年)前/,
-                process: (amount, unit) => {
-                    switch (unit) {
-                        case '分钟': return now.setMinutes(now.getMinutes() - amount);
-                        case '小时': return now.setHours(now.getHours() - amount);
-                        case '天': return now.setDate(now.getDate() - amount);
-                        case '周': return now.setDate(now.getDate() - (amount * 7));
-                        case '月': return now.setMonth(now.getMonth() - amount);
-                        case '年': return now.setFullYear(now.getFullYear() - amount);
-                    }
-                }
-            }
-        ];
-
-        for (const pattern of patterns) {
-            const matches = timeText.match(pattern.regex);
-            if (matches) {
-                const [_, amount, unit] = matches;
-                pattern.process(parseInt(amount), unit);
-                return now.toISOString();
-            }
+        // 如果是时间戳
+        if (!isNaN(timeText)) {
+            const date = new Date(parseInt(timeText));
+            return date.toISOString();
         }
-
-        // 如果无法解析，返回当前时间
-        console.warn('无法解析时间格式:', timeText);
-        return now.toISOString();
+        
+        // 其他格式保持不变
+        return new Date().toISOString();
     }
 }
 
