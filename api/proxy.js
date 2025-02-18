@@ -4,6 +4,12 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
+    // 处理预检请求
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+
     try {
         const { url } = req.query;
         if (!url) {
@@ -17,12 +23,12 @@ export default async function handler(req, res) {
             throw new Error('无效的币种 URL');
         }
 
-        // 使用正确的 CoinMarketCap 新闻 API
-        const apiUrl = 'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/news';
+        // 使用 CoinMarketCap 的新闻 API
+        const apiUrl = 'https://api.coinmarketcap.com/content/v3/news';
         const params = new URLSearchParams({
-            slug: coinSlug,
-            size: '100',  // 增加数量以获取更多新闻
-            offset: '0'
+            coins: coinSlug,
+            page: '1',
+            size: '100'
         });
 
         console.log('请求 API:', `${apiUrl}?${params}`);
@@ -35,7 +41,8 @@ export default async function handler(req, res) {
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://coinmarketcap.com',
                 'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/news/`,
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'no-cache',
+                'x-request-id': Date.now().toString()
             }
         });
 
@@ -47,11 +54,11 @@ export default async function handler(req, res) {
         console.log('API 响应:', {
             status: response.status,
             hasData: !!data.data,
-            itemCount: data.data?.count || 0
+            itemCount: data.data?.items?.length || 0
         });
 
         // 验证数据结构
-        if (!data.data || !Array.isArray(data.data.news)) {
+        if (!data.data || !Array.isArray(data.data.items)) {
             throw new Error('API 返回的数据格式不正确');
         }
 
@@ -60,14 +67,14 @@ export default async function handler(req, res) {
             <html>
                 <body>
                     <div class="news-container">
-                        ${data.data.news.map(item => `
+                        ${data.data.items.map(item => `
                             <article>
                                 <h3>${item.title || ''}</h3>
                                 <div class="meta">
                                     <time datetime="${item.createdAt || ''}">${new Date(item.createdAt || '').toLocaleString('zh-CN')}</time>
                                     <span class="source">${item.sourceName || 'Unknown'}</span>
                                 </div>
-                                <div class="description">${item.subtitle || ''}</div>
+                                <div class="description">${item.description || ''}</div>
                             </article>
                         `).join('')}
                     </div>
@@ -83,7 +90,8 @@ export default async function handler(req, res) {
             error: error.message,
             details: process.env.NODE_ENV === 'development' ? {
                 stack: error.stack,
-                url: req.query.url
+                url: req.query.url,
+                timestamp: new Date().toISOString()
             } : undefined
         });
     }
