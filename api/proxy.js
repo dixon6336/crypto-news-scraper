@@ -17,58 +17,87 @@ export default async function handler(req, res) {
             return;
         }
 
-        console.log('请求 URL:', url);
+        // 构建新闻 API URL
+        const coinPath = url.split('/currencies/')[1]?.split('/')[0];
+        if (!coinPath) {
+            throw new Error('无效的币种 URL');
+        }
 
-        // 直接请求网页
-        const response = await fetch(url, {
+        // 使用 CoinMarketCap 的 GraphQL API
+        const apiUrl = 'https://api.coinmarketcap.com/graphql';
+        const query = {
+            query: `
+                query GetLatestNews($slug: String!) {
+                    cryptocurrency(slug: $slug) {
+                        news(first: 50) {
+                            edges {
+                                node {
+                                    title
+                                    description
+                                    source
+                                    createdAt
+                                }
+                            }
+                        }
+                    }
+                }
+            `,
+            variables: {
+                slug: coinPath
+            }
+        };
+
+        console.log('请求 API:', apiUrl);
+        console.log('币种:', coinPath);
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.9',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Sec-Ch-Ua': '"Not_A Brand";v="99", "Google Chrome";v="120"',
-                'Sec-Ch-Ua-Mobile': '?0',
-                'Sec-Ch-Ua-Platform': '"Windows"',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1'
-            }
+                'Origin': 'https://coinmarketcap.com',
+                'Referer': 'https://coinmarketcap.com/',
+                'x-request-id': Date.now().toString()
+            },
+            body: JSON.stringify(query)
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error(`API 请求失败: ${response.status}`);
         }
 
-        const html = await response.text();
+        const data = await response.json();
+        console.log('API 响应:', {
+            status: response.status,
+            hasData: !!data.data,
+            hasNews: !!data.data?.cryptocurrency?.news
+        });
+
+        // 验证并转换数据
+        const newsItems = data.data?.cryptocurrency?.news?.edges?.map(edge => edge.node) || [];
         
-        // 验证内容
-        if (!html || html.trim().length === 0) {
-            throw new Error('Empty response from server');
-        }
+        // 转换为 HTML 格式
+        const html = `
+            <html>
+                <body>
+                    <div class="news-container">
+                        ${newsItems.map(item => `
+                            <article>
+                                <h3>${item.title || ''}</h3>
+                                <div class="meta">
+                                    <time datetime="${item.createdAt || ''}">${item.createdAt || ''}</time>
+                                    <span class="source">${item.source || 'Unknown'}</span>
+                                </div>
+                                <div class="description">${item.description || ''}</div>
+                            </article>
+                        `).join('')}
+                    </div>
+                </body>
+            </html>
+        `;
 
-        // 记录响应信息
-        console.log('响应状态:', response.status);
-        console.log('响应大小:', html.length);
-        console.log('响应类型:', response.headers.get('content-type'));
-
-        // 检查是否包含新闻内容的关键字
-        const hasNewsContent = [
-            'news-list',
-            'article',
-            'news-content',
-            'news-item',
-            'sc-aef7b723-0'
-        ].some(keyword => html.includes(keyword));
-
-        if (!hasNewsContent) {
-            console.log('页面内容片段:', html.substring(0, 500));
-            throw new Error('未找到新闻内容，请确保URL正确');
-        }
-
-        // 返回HTML内容
         res.status(200).json({ html });
 
     } catch (error) {
