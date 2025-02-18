@@ -4,12 +4,6 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    // 处理预检请求
-    if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-    }
-
     try {
         const { url } = req.query;
         if (!url) {
@@ -17,51 +11,32 @@ export default async function handler(req, res) {
             return;
         }
 
-        // 构建新闻 API URL
-        const coinPath = url.split('/currencies/')[1]?.split('/')[0];
-        if (!coinPath) {
+        // 从 URL 中提取币种符号
+        const coinSlug = url.split('/currencies/')[1]?.split('/')[0];
+        if (!coinSlug) {
             throw new Error('无效的币种 URL');
         }
 
-        // 使用 CoinMarketCap 的 GraphQL API
-        const apiUrl = 'https://api.coinmarketcap.com/graphql';
-        const query = {
-            query: `
-                query GetLatestNews($slug: String!) {
-                    cryptocurrency(slug: $slug) {
-                        news(first: 50) {
-                            edges {
-                                node {
-                                    title
-                                    description
-                                    source
-                                    createdAt
-                                }
-                            }
-                        }
-                    }
-                }
-            `,
-            variables: {
-                slug: coinPath
-            }
-        };
+        // 使用正确的 CoinMarketCap 新闻 API
+        const apiUrl = 'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/news';
+        const params = new URLSearchParams({
+            slug: coinSlug,
+            size: '100',  // 增加数量以获取更多新闻
+            offset: '0'
+        });
 
-        console.log('请求 API:', apiUrl);
-        console.log('币种:', coinPath);
+        console.log('请求 API:', `${apiUrl}?${params}`);
+        console.log('币种:', coinSlug);
 
-        const response = await fetch(apiUrl, {
-            method: 'POST',
+        const response = await fetch(`${apiUrl}?${params}`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json',
-                'Content-Type': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://coinmarketcap.com',
-                'Referer': 'https://coinmarketcap.com/',
-                'x-request-id': Date.now().toString()
-            },
-            body: JSON.stringify(query)
+                'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/news/`,
+                'Cache-Control': 'no-cache'
+            }
         });
 
         if (!response.ok) {
@@ -72,25 +47,27 @@ export default async function handler(req, res) {
         console.log('API 响应:', {
             status: response.status,
             hasData: !!data.data,
-            hasNews: !!data.data?.cryptocurrency?.news
+            itemCount: data.data?.count || 0
         });
 
-        // 验证并转换数据
-        const newsItems = data.data?.cryptocurrency?.news?.edges?.map(edge => edge.node) || [];
-        
+        // 验证数据结构
+        if (!data.data || !Array.isArray(data.data.news)) {
+            throw new Error('API 返回的数据格式不正确');
+        }
+
         // 转换为 HTML 格式
         const html = `
             <html>
                 <body>
                     <div class="news-container">
-                        ${newsItems.map(item => `
+                        ${data.data.news.map(item => `
                             <article>
                                 <h3>${item.title || ''}</h3>
                                 <div class="meta">
-                                    <time datetime="${item.createdAt || ''}">${item.createdAt || ''}</time>
-                                    <span class="source">${item.source || 'Unknown'}</span>
+                                    <time datetime="${item.createdAt || ''}">${new Date(item.createdAt || '').toLocaleString('zh-CN')}</time>
+                                    <span class="source">${item.sourceName || 'Unknown'}</span>
                                 </div>
-                                <div class="description">${item.description || ''}</div>
+                                <div class="description">${item.subtitle || ''}</div>
                             </article>
                         `).join('')}
                     </div>
