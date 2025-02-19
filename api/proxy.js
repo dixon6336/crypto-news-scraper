@@ -23,50 +23,72 @@ export default async function handler(req, res) {
             throw new Error('无效的币种 URL');
         }
 
-        // 首先获取币种 ID
-        const searchUrl = `https://api.coinmarketcap.com/data-api/v3/cryptocurrency/listing?slug=${coinSlug}`;
-        const searchResponse = await fetch(searchUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json',
-                'Origin': 'https://coinmarketcap.com',
-                'Referer': 'https://coinmarketcap.com/'
-            }
+        // 使用新的 API 端点
+        const apiUrl = 'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/market-pairs/latest';
+        const params = new URLSearchParams({
+            slug: coinSlug,
+            category: 'news',
+            limit: 100,
+            newsCategory: 'ALL'
         });
 
-        if (!searchResponse.ok) {
-            throw new Error(`无法获取币种信息: ${searchResponse.status}`);
-        }
+        console.log('请求 API:', `${apiUrl}?${params}`);
 
-        const searchData = await searchResponse.json();
-        const cryptoId = searchData.data?.cryptoCurrencyList?.[0]?.id;
-        
-        if (!cryptoId) {
-            throw new Error('未找到币种信息');
-        }
-
-        // 使用币种 ID 获取新闻
-        const newsUrl = `https://api.coinmarketcap.com/data-api/v3/cryptocurrency/detail/news?id=${cryptoId}`;
-        const newsResponse = await fetch(newsUrl, {
+        const response = await fetch(`${apiUrl}?${params}`, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://coinmarketcap.com',
                 'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/`,
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'no-cache',
+                'x-request-id': Date.now().toString()
             }
         });
 
-        if (!newsResponse.ok) {
-            throw new Error(`获取新闻失败: ${newsResponse.status}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API 响应错误:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorText,
+                url: `${apiUrl}?${params}`
+            });
+            throw new Error(`API 请求失败: ${response.status}`);
         }
 
-        const newsData = await newsResponse.json();
+        const data = await response.json();
         
-        if (!newsData.data?.news) {
-            console.error('新闻数据结构:', newsData);
-            throw new Error('新闻数据格式不正确');
+        // 验证并提取新闻数据
+        if (!data.data?.news) {
+            // 尝试直接抓取网页
+            const webpageUrl = `https://coinmarketcap.com/currencies/${coinSlug}/news/`;
+            const webResponse = await fetch(webpageUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'text/html',
+                    'Accept-Language': 'en-US,en;q=0.9'
+                }
+            });
+
+            if (!webResponse.ok) {
+                throw new Error('无法获取新闻数据');
+            }
+
+            const htmlText = await webResponse.text();
+            
+            // 提取新闻数据
+            const newsRegex = /<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/;
+            const match = htmlText.match(newsRegex);
+            
+            if (match && match[1]) {
+                const pageData = JSON.parse(match[1]);
+                data.data = {
+                    news: pageData.props?.pageProps?.news || []
+                };
+            } else {
+                throw new Error('未找到新闻数据');
+            }
         }
 
         // 转换为 HTML 格式
@@ -74,14 +96,14 @@ export default async function handler(req, res) {
             <html>
                 <body>
                     <div class="news-container">
-                        ${newsData.data.news.map(item => `
+                        ${data.data.news.map(item => `
                             <article>
                                 <h3>${item.title || ''}</h3>
                                 <div class="meta">
                                     <time datetime="${item.createdAt || ''}">${new Date(item.createdAt || '').toLocaleString('zh-CN')}</time>
-                                    <span class="source">${item.sourceUrl ? new URL(item.sourceUrl).hostname : 'Unknown'}</span>
+                                    <span class="source">${item.sourceName || item.source || 'Unknown'}</span>
                                 </div>
-                                <div class="description">${item.description || ''}</div>
+                                <div class="description">${item.description || item.subtitle || ''}</div>
                                 <div class="link"><a href="${item.sourceUrl || '#'}" target="_blank">阅读原文</a></div>
                             </article>
                         `).join('')}
