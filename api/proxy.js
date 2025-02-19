@@ -23,13 +23,16 @@ export default async function handler(req, res) {
             throw new Error('无效的币种 URL');
         }
 
-        // 使用 CoinMarketCap 的新闻 API
-        const apiUrl = 'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/details/news';
+        // 使用新的 API 端点
+        const apiUrl = 'https://api.coinmarketcap.com/content/v3/news';
         const params = new URLSearchParams({
-            slug: coinSlug,
-            pageSize: '100',
-            page: '1'
+            coins: coinSlug,
+            page: '1',
+            size: '100',
+            interval: '7d'  // 获取最近7天的新闻
         });
+
+        console.log('请求 API:', `${apiUrl}?${params}`);
 
         const response = await fetch(`${apiUrl}?${params}`, {
             headers: {
@@ -37,9 +40,12 @@ export default async function handler(req, res) {
                 'Accept': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://coinmarketcap.com',
-                'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/`,
+                'Referer': 'https://coinmarketcap.com/',
                 'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive'
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin'
             }
         });
 
@@ -56,7 +62,7 @@ export default async function handler(req, res) {
 
         const data = await response.json();
         
-        if (!data.data?.news) {
+        if (!data.data?.items) {
             console.error('API 返回数据结构:', data);
             throw new Error('API 返回的数据格式不正确');
         }
@@ -66,16 +72,17 @@ export default async function handler(req, res) {
             <html>
                 <body>
                     <div class="news-container">
-                        ${data.data?.news?.map(item => `
+                        ${data.data.items.map(item => `
                             <article>
-                                <h3>${item.title || ''}</h3>
+                                <h3>${item.meta?.title || ''}</h3>
                                 <div class="meta">
-                                    <time datetime="${item.createdAt || ''}">${item.createdAt || ''}</time>
-                                    <span class="source">${item.source || ''}</span>
+                                    <time datetime="${item.meta?.createdAt || ''}">${new Date(item.meta?.createdAt || '').toLocaleString('zh-CN')}</time>
+                                    <span class="source">${item.meta?.sourceName || ''}</span>
                                 </div>
-                                <div class="description">${item.description || ''}</div>
+                                <div class="description">${item.meta?.subtitle || ''}</div>
+                                <div class="link"><a href="${item.meta?.sourceUrl || '#'}" target="_blank">阅读原文</a></div>
                             </article>
-                        `).join('') || ''}
+                        `).join('')}
                     </div>
                 </body>
             </html>
