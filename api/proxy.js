@@ -4,12 +4,6 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    // 处理预检请求
-    if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-    }
-
     try {
         const { url } = req.query;
         if (!url) {
@@ -23,12 +17,14 @@ export default async function handler(req, res) {
             throw new Error('无效的币种 URL');
         }
 
-        // 使用 CoinMarketCap 的新闻 API
-        const apiUrl = 'https://api.coinmarketcap.com/content/v3/news';
+        // 使用新的 API 端点
+        const apiUrl = 'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/market-pairs/latest/news';
         const params = new URLSearchParams({
-            coins: coinSlug,
-            page: '1',
-            size: '100'
+            slug: coinSlug,
+            start: '0',
+            limit: '100',
+            category: 'news',
+            direction: 'desc'
         });
 
         console.log('请求 API:', `${apiUrl}?${params}`);
@@ -40,25 +36,31 @@ export default async function handler(req, res) {
                 'Accept': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://coinmarketcap.com',
-                'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/news/`,
+                'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/`,
                 'Cache-Control': 'no-cache',
-                'x-request-id': Date.now().toString()
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+                'Connection': 'keep-alive'
             }
         });
 
         if (!response.ok) {
-            throw new Error(`API 请求失败: ${response.status}`);
+            const errorText = await response.text();
+            console.error('API 错误响应:', errorText);
+            throw new Error(`API 请求失败: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
         console.log('API 响应:', {
             status: response.status,
             hasData: !!data.data,
-            itemCount: data.data?.items?.length || 0
+            dataStructure: Object.keys(data.data || {})
         });
 
         // 验证数据结构
-        if (!data.data || !Array.isArray(data.data.items)) {
+        if (!data.data || !Array.isArray(data.data.newsItems)) {
+            console.error('返回的数据结构:', data);
             throw new Error('API 返回的数据格式不正确');
         }
 
@@ -67,14 +69,15 @@ export default async function handler(req, res) {
             <html>
                 <body>
                     <div class="news-container">
-                        ${data.data.items.map(item => `
+                        ${data.data.newsItems.map(item => `
                             <article>
                                 <h3>${item.title || ''}</h3>
                                 <div class="meta">
-                                    <time datetime="${item.createdAt || ''}">${new Date(item.createdAt || '').toLocaleString('zh-CN')}</time>
-                                    <span class="source">${item.sourceName || 'Unknown'}</span>
+                                    <time datetime="${item.publishedAt || ''}">${new Date(item.publishedAt || '').toLocaleString('zh-CN')}</time>
+                                    <span class="source">${item.source || 'Unknown'}</span>
                                 </div>
-                                <div class="description">${item.description || ''}</div>
+                                <div class="description">${item.summary || ''}</div>
+                                <div class="link"><a href="${item.url || '#'}" target="_blank">阅读原文</a></div>
                             </article>
                         `).join('')}
                     </div>
