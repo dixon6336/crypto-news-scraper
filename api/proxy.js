@@ -38,16 +38,29 @@ export default async function handler(req, res) {
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://coinmarketcap.com',
                 'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/`,
-                'Cache-Control': 'no-cache'
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive'
             }
         });
 
         if (!response.ok) {
-            throw new Error(`API 请求失败: ${response.status}`);
+            const errorText = await response.text();
+            console.error('API 响应错误:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorText,
+                url: `${apiUrl}?${params}`
+            });
+            throw new Error(`API 请求失败: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
         
+        if (!data.data?.news) {
+            console.error('API 返回数据结构:', data);
+            throw new Error('API 返回的数据格式不正确');
+        }
+
         // 转换为 HTML 格式
         const html = `
             <html>
@@ -71,7 +84,14 @@ export default async function handler(req, res) {
         res.status(200).json({ html });
 
     } catch (error) {
-        console.error('代理错误:', error);
-        res.status(500).json({ error: error.message });
+        console.error('代理错误:', {
+            message: error.message,
+            stack: error.stack,
+            url: req.query.url
+        });
+        res.status(500).json({ 
+            error: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 }
