@@ -23,48 +23,50 @@ export default async function handler(req, res) {
             throw new Error('无效的币种 URL');
         }
 
-        // 使用新的 API 端点
-        const apiUrl = 'https://api.coinmarketcap.com/content/v3/news';
-        const params = new URLSearchParams({
-            coins: coinSlug,
-            page: '1',
-            size: '100',
-            interval: '7d'  // 获取最近7天的新闻
+        // 首先获取币种 ID
+        const searchUrl = `https://api.coinmarketcap.com/data-api/v3/cryptocurrency/listing?slug=${coinSlug}`;
+        const searchResponse = await fetch(searchUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json',
+                'Origin': 'https://coinmarketcap.com',
+                'Referer': 'https://coinmarketcap.com/'
+            }
         });
 
-        console.log('请求 API:', `${apiUrl}?${params}`);
+        if (!searchResponse.ok) {
+            throw new Error(`无法获取币种信息: ${searchResponse.status}`);
+        }
 
-        const response = await fetch(`${apiUrl}?${params}`, {
+        const searchData = await searchResponse.json();
+        const cryptoId = searchData.data?.cryptoCurrencyList?.[0]?.id;
+        
+        if (!cryptoId) {
+            throw new Error('未找到币种信息');
+        }
+
+        // 使用币种 ID 获取新闻
+        const newsUrl = `https://api.coinmarketcap.com/data-api/v3/cryptocurrency/detail/news?id=${cryptoId}`;
+        const newsResponse = await fetch(newsUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://coinmarketcap.com',
-                'Referer': 'https://coinmarketcap.com/',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin'
+                'Referer': `https://coinmarketcap.com/currencies/${coinSlug}/`,
+                'Cache-Control': 'no-cache'
             }
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('API 响应错误:', {
-                status: response.status,
-                statusText: response.statusText,
-                errorText,
-                url: `${apiUrl}?${params}`
-            });
-            throw new Error(`API 请求失败: ${response.status} - ${errorText}`);
+        if (!newsResponse.ok) {
+            throw new Error(`获取新闻失败: ${newsResponse.status}`);
         }
 
-        const data = await response.json();
+        const newsData = await newsResponse.json();
         
-        if (!data.data?.items) {
-            console.error('API 返回数据结构:', data);
-            throw new Error('API 返回的数据格式不正确');
+        if (!newsData.data?.news) {
+            console.error('新闻数据结构:', newsData);
+            throw new Error('新闻数据格式不正确');
         }
 
         // 转换为 HTML 格式
@@ -72,15 +74,15 @@ export default async function handler(req, res) {
             <html>
                 <body>
                     <div class="news-container">
-                        ${data.data.items.map(item => `
+                        ${newsData.data.news.map(item => `
                             <article>
-                                <h3>${item.meta?.title || ''}</h3>
+                                <h3>${item.title || ''}</h3>
                                 <div class="meta">
-                                    <time datetime="${item.meta?.createdAt || ''}">${new Date(item.meta?.createdAt || '').toLocaleString('zh-CN')}</time>
-                                    <span class="source">${item.meta?.sourceName || ''}</span>
+                                    <time datetime="${item.createdAt || ''}">${new Date(item.createdAt || '').toLocaleString('zh-CN')}</time>
+                                    <span class="source">${item.sourceUrl ? new URL(item.sourceUrl).hostname : 'Unknown'}</span>
                                 </div>
-                                <div class="description">${item.meta?.subtitle || ''}</div>
-                                <div class="link"><a href="${item.meta?.sourceUrl || '#'}" target="_blank">阅读原文</a></div>
+                                <div class="description">${item.description || ''}</div>
+                                <div class="link"><a href="${item.sourceUrl || '#'}" target="_blank">阅读原文</a></div>
                             </article>
                         `).join('')}
                     </div>
