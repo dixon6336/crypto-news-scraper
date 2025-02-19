@@ -55,10 +55,17 @@
         <div class="row mt-2">
             <div class="col-md-12">
                 <div id="statusContainer" style="display: none;">
-                    <div class="progress mb-2">
-                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"></div>
+                    <div class="progress" style="height: 20px;">
+                        <div id="progressBar" 
+                             class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" 
+                             style="width: 0%" 
+                             aria-valuenow="0" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100">
+                        </div>
                     </div>
-                    <div id="statusText" class="text-muted small"></div>
+                    <div id="statusText" class="text-muted small mt-1"></div>
                 </div>
             </div>
         </div>
